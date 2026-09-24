@@ -23,3 +23,11 @@ processor/output/*
 .idea/
 .vscode/
 
+# Terraform state and working directory
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+!infrastructure/terraform.tfvars.example
