@@ -1,0 +1,25 @@
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+
+# Python caches, virtual environments, and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Generated processor images
+processor/output/*
+!processor/output/.gitkeep
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+
