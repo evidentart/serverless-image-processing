@@ -30,3 +30,8 @@ variable "project_name" {
     error_message = "project_name must contain only lowercase letters, numbers, and hyphens."
   }
 }
+
+variable "budget_alert_email" {
+  description = "Email address that receives account-wide budget threshold alerts."
+  type        = string
+}
