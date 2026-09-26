@@ -1,6 +1,6 @@
 # Serverless Image Processing Platform
 
-A portfolio project for a serverless image-upload and processing platform. Phase 3 is complete: the React/Vite frontend requests a short-lived S3 upload policy, and the browser uploads image bytes directly to private S3 storage.
+A portfolio project demonstrating a serverless image-upload and processing pipeline. Phase 4 is deployed and verified end to end.
 
 ## Current architecture
 
@@ -14,128 +14,121 @@ API Gateway HTTP API
 Presign Lambda
         |
         v
-Presigned S3 POST
+Browser direct upload to S3 incoming/
         |
         v
-Private S3 bucket: incoming/
+S3 ObjectCreated notification
+        |
+        v
+Standard SQS processing queue
+        |
+        v
+Processing Lambda with Pillow
+        |
+        v
+S3 processed/<uuid>/
 ```
 
-The image bytes do not pass through Lambda or API Gateway. The browser sends them directly to S3 using the presigned POST returned by the presign Lambda. S3 object keys use server-generated UUIDs; original filenames are never used as keys.
+Image bytes upload directly from the browser to the private S3 bucket; they do not pass through Lambda or API Gateway. The presign Lambda creates short-lived upload policies, while the processing Lambda consumes validated event messages asynchronously.
 
-## Phase 3 upload support
+## Upload and processing outputs
 
-- JPEG/JPG and PNG files
-- Maximum size of 25 MiB
-- Server-generated UUID object keys under the private `incoming/` prefix
-- Client-side type and size checks, with backend and S3 policy validation authoritative
+Phase 3 accepts JPEG/JPG and PNG uploads up to 25 MiB. S3 object keys use server-generated UUIDs and never use original filenames.
 
-The frontend reads the API endpoint from `frontend/.env.local` using `VITE_UPLOAD_API_URL`. Use `frontend/.env.example` as the template. Local environment files are ignored by Git.
+A successfully processed image produces deterministic outputs such as:
+
+```text
+processed/<uuid>/thumbnail.jpg
+processed/<uuid>/medium.jpg
+processed/<uuid>/optimized.webp
+```
 
 ## Security controls
 
-- Private S3 bucket with S3 Block Public Access enabled
-- `BucketOwnerEnforced` object ownership
-- SSE-S3 encryption using AES256
-- TLS-only S3 bucket policy
-- Presigned POST policies expire after 5 minutes
-- POST policy enforces the upload size, `Content-Type`, generated key, and AES256 server-side encryption
-- Lambda write access is restricted to `incoming/*`
-- Original filenames are not used as S3 keys
-- The frontend does not display or log signed AWS fields
+- The S3 bucket is private with S3 Block Public Access and `BucketOwnerEnforced` ownership.
+- SSE-S3 AES256 encryption and a TLS-only bucket policy are enabled.
+- Presigned POST policies expire after five minutes and enforce size, `Content-Type`, generated key, and AES256 conditions.
+- The presign Lambda has `s3:PutObject` only to `incoming/*`.
+- The processing Lambda reads only from `incoming/*` and writes only to `processed/*`.
+- The processing Lambda does not delete source objects, list the bucket, or write back to `incoming/*`.
+- The processing Lambda consumes only the processing SQS queue.
+- The processing Lambda has no VPC, NAT Gateway, reserved concurrency, or provisioned concurrency.
+- Original filenames are not used as local processing paths or processed S3 keys.
+- The frontend does not display or log signed AWS fields.
 
-## Cost controls and deliberate decisions
+## Image validation
 
-- Serverless, pay-per-use architecture
-- HTTP API instead of the higher-cost REST API option
-- No NAT Gateway
-- No always-on compute
-- No provisioned concurrency
-- SSE-S3 instead of a customer-managed KMS key
-- S3 lifecycle configuration deletes temporary objects after 30 days
-- AWS Budget alerts provide cost visibility; they are not a hard spending cap, and AWS spending can exceed the alert threshold
+Phase 4 validates actual image content with Pillow instead of trusting MIME metadata or file extensions. It includes:
 
-## Current limitations
+- Actual JPEG and PNG content validation
+- `Image.verify()` followed by reopening the image for processing
+- Truncated-image rejection
+- Pillow decompression-bomb protection
+- Maximum dimension of 10,000 pixels
+- Maximum total pixel count of 25,000,000
+- EXIF orientation handling
+- Generated safe temporary paths under `/tmp`
+- No use of original user filenames as processing paths or processed keys
 
-- API authorization is currently `NONE`, which is intentional for local/dev portfolio development
-- API throttling reduces abuse risk but is not a hard quota, security boundary, or spending cap
-- CORS currently allows only the local Vite origins (`http://localhost:5173` and `http://127.0.0.1:5173`)
-- MIME metadata is not trusted as proof of real file content
-- The processing pipeline is not deployed yet
-- Terraform state is currently local
-- The current direct `AdministratorAccess` bootstrap setup is temporary and is not the desired long-term deployment model
+## SQS and failure handling
 
-## Architectural decisions and tradeoffs
+- Standard SQS processing queue with batch size 1
+- Maximum event-source concurrency of 2
+- 360-second visibility timeout
+- Four-day main queue retention
+- Dead-letter queue after three receives
+- 14-day DLQ retention
+- SQS-managed encryption
+- Deterministic output paths make duplicate deliveries safe
+- Malformed or transient failures retry through SQS and eventually move to the DLQ
+- S3 `s3:TestEvent` messages are explicitly handled as harmless successful no-ops
 
-- HTTP API was selected over REST API for a lightweight upload endpoint.
-- Presigned POST was selected instead of sending image bytes through Lambda, avoiding Lambda payload and execution costs for the upload itself.
-- Presigned POST is used in part because its policy supports `content-length-range` enforcement.
-- S3 versioning is intentionally disabled for disposable development image objects.
-- `incoming/` is treated as an untrusted quarantine area.
-- Cognito and WAF are not included yet because they are not justified for the current phase.
-- Lambda is not placed in a VPC, so a NAT Gateway is not required.
+The S3 notification is filtered to `incoming/`, so objects written under `processed/` cannot recursively trigger processing. The existing development lifecycle rule applies to the entire bucket: both `incoming/*` and `processed/*` expire after 30 days. This is intentional for the temporary portfolio/dev environment.
 
-## Testing completed
+## Packaging
 
-The current Phase 3 verification includes:
+Before any Terraform plan or apply involving processor Lambda code, run:
 
-- Frontend production build passes
+```powershell
+.\scripts\build_processor_lambda.ps1
+```
+
+Terraform archives the generated, Git-ignored `.phase4-build/processor-package` directory. A clean checkout must run this reproducible build step first. The script packages Linux/x86_64-compatible Pillow wheels for the Python 3.12 Lambda runtime and does not copy Pillow from the Windows virtual environment.
+
+## Testing and verification
+
+Verified Phase 4 results:
+
 - 10 presign Lambda tests pass
-- 4 existing image processor tests pass
-- Real browser-to-API-to-S3 upload manually verified
+- 16 processor-handler Lambda tests pass
+- 4 processor tests pass
+- 30 total Python tests pass
+- Terraform fmt check passes
+- Terraform validate passes
+- Terraform reports no infrastructure drift after deployment
+- The live processor Lambda is Active
+- The live SQS event source mapping is Enabled
+- A real JPEG was uploaded to `incoming/`
+- The live pipeline produced `thumbnail.jpg`, `medium.jpg`, and `optimized.webp`
+- The main queue and DLQ were clean after testing
 
-Run the tests locally from the project root with the project virtual environment activated:
+## Current limitations and future work
 
-```bash
-# Frontend
-cd frontend
-npm install
-npm run build
+- The upload API remains unauthenticated for the current development/portfolio phase.
+- API throttling reduces abuse risk but is not a hard security boundary or spending cap.
+- The frontend does not yet display processed results or processing status.
+- CORS currently allows only the local Vite origins.
+- Terraform state is still local.
+- Direct `AdministratorAccess` remains a temporary bootstrap compromise, not the desired long-term deployment model.
+- Production frontend hosting and CI/CD are not implemented yet.
+- The project is not complete until these operational limitations are addressed for a production deployment.
 
-# Python tests, from the project root
-cd ..
-python -m unittest discover -s lambda/tests -v
-python -m unittest discover -s processor/tests -v
-```
+## Cost and architectural decisions
 
-## Local image processor
-
-The existing Pillow processor remains available locally while the AWS processing phase is being developed. Install its dependency in the project virtual environment:
-
-```bash
-python -m venv .venv
-
-# macOS/Linux
-source .venv/bin/activate
-
-# Windows PowerShell
-.venv\Scripts\Activate.ps1
-
-python -m pip install -r processor/requirements.txt
-```
-
-Process a local JPG or PNG:
-
-```bash
-python processor/process_image.py path/to/example.jpg
-```
-
-The processor writes thumbnail, medium, and optimized WebP outputs to `processor/output/`. It preserves aspect ratio, does not upscale, and composites PNG transparency onto white for JPEG outputs.
-
-## Planned next architecture phase
-
-Phase 4 is planned, not deployed:
-
-```text
-S3 incoming event
-        |
-        v
-SQS
-        |
-        v
-Processing Lambda using Pillow
-        |
-        v
-Validated/transformed output
-```
-
-That phase should include SQS retries and a dead-letter queue, least-privilege IAM, and actual image signature/content validation rather than relying on MIME metadata alone. The project is not complete until that processing path is implemented, secured, and deployed.
+- Serverless, pay-per-use services are used throughout.
+- HTTP API was selected instead of REST API.
+- Direct browser-to-S3 upload avoids sending image bytes through Lambda.
+- SQS provides decoupling, retries, and DLQ handling without an always-on worker.
+- No DynamoDB, EventBridge, VPC, NAT Gateway, WAF, Cognito, ECR, or customer-managed KMS key is used.
+- S3 versioning is intentionally disabled for disposable development image objects.
+- AWS Budget alerts provide visibility but are not a hard spending cap.

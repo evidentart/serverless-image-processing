@@ -13,6 +13,9 @@ venv/
 processor/output/*
 !processor/output/.gitkeep
 
+# Generated Phase 4 Lambda package
+.phase4-build/
+
 # Local environment files
 .env
 .env.*
