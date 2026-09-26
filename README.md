@@ -1,44 +1,105 @@
-# AWS Serverless Image Processing Platform
+# Serverless Image Processing Platform
 
-A local foundation for a portfolio project that will eventually process images through AWS serverless services. This phase intentionally contains only a React frontend and a local Python/Pillow image processor.
+A portfolio project for a serverless image-upload and processing platform. Phase 3 is complete: the React/Vite frontend requests a short-lived S3 upload policy, and the browser uploads image bytes directly to private S3 storage.
 
-## Project structure
+## Current architecture
 
 ```text
-.
-├── frontend/                 # React + TypeScript + Vite interface
-└── processor/                # Local Python 3.12 + Pillow processor
-    ├── output/               # Generated images (ignored by Git)
-    ├── process_image.py      # Processing module and CLI entry point
-    ├── requirements.txt
-    └── tests/
+React/Vite frontend
+        |
+        v
+API Gateway HTTP API
+        |
+        v
+Presign Lambda
+        |
+        v
+Presigned S3 POST
+        |
+        v
+Private S3 bucket: incoming/
 ```
 
-## Run the frontend
+The image bytes do not pass through Lambda or API Gateway. The browser sends them directly to S3 using the presigned POST returned by the presign Lambda. S3 object keys use server-generated UUIDs; original filenames are never used as keys.
 
-Prerequisite: Node.js 18+ and npm.
+## Phase 3 upload support
 
-From the project root:
+- JPEG/JPG and PNG files
+- Maximum size of 25 MiB
+- Server-generated UUID object keys under the private `incoming/` prefix
+- Client-side type and size checks, with backend and S3 policy validation authoritative
+
+The frontend reads the API endpoint from `frontend/.env.local` using `VITE_UPLOAD_API_URL`. Use `frontend/.env.example` as the template. Local environment files are ignored by Git.
+
+## Security controls
+
+- Private S3 bucket with S3 Block Public Access enabled
+- `BucketOwnerEnforced` object ownership
+- SSE-S3 encryption using AES256
+- TLS-only S3 bucket policy
+- Presigned POST policies expire after 5 minutes
+- POST policy enforces the upload size, `Content-Type`, generated key, and AES256 server-side encryption
+- Lambda write access is restricted to `incoming/*`
+- Original filenames are not used as S3 keys
+- The frontend does not display or log signed AWS fields
+
+## Cost controls and deliberate decisions
+
+- Serverless, pay-per-use architecture
+- HTTP API instead of the higher-cost REST API option
+- No NAT Gateway
+- No always-on compute
+- No provisioned concurrency
+- SSE-S3 instead of a customer-managed KMS key
+- S3 lifecycle configuration deletes temporary objects after 30 days
+- AWS Budget alerts provide cost visibility; they are not a hard spending cap, and AWS spending can exceed the alert threshold
+
+## Current limitations
+
+- API authorization is currently `NONE`, which is intentional for local/dev portfolio development
+- API throttling reduces abuse risk but is not a hard quota, security boundary, or spending cap
+- CORS currently allows only the local Vite origins (`http://localhost:5173` and `http://127.0.0.1:5173`)
+- MIME metadata is not trusted as proof of real file content
+- The processing pipeline is not deployed yet
+- Terraform state is currently local
+- The current direct `AdministratorAccess` bootstrap setup is temporary and is not the desired long-term deployment model
+
+## Architectural decisions and tradeoffs
+
+- HTTP API was selected over REST API for a lightweight upload endpoint.
+- Presigned POST was selected instead of sending image bytes through Lambda, avoiding Lambda payload and execution costs for the upload itself.
+- Presigned POST is used in part because its policy supports `content-length-range` enforcement.
+- S3 versioning is intentionally disabled for disposable development image objects.
+- `incoming/` is treated as an untrusted quarantine area.
+- Cognito and WAF are not included yet because they are not justified for the current phase.
+- Lambda is not placed in a VPC, so a NAT Gateway is not required.
+
+## Testing completed
+
+The current Phase 3 verification includes:
+
+- Frontend production build passes
+- 10 presign Lambda tests pass
+- 4 existing image processor tests pass
+- Real browser-to-API-to-S3 upload manually verified
+
+Run the tests locally from the project root with the project virtual environment activated:
 
 ```bash
+# Frontend
 cd frontend
 npm install
-npm run dev
-```
-
-Open the local URL printed by Vite, usually `http://localhost:5173`. The page accepts JPG and PNG files, shows a local preview and file metadata, and keeps the **Process Image** button disabled until a later phase. No file is uploaded anywhere.
-
-To create a production build locally:
-
-```bash
 npm run build
+
+# Python tests, from the project root
+cd ..
+python -m unittest discover -s lambda/tests -v
+python -m unittest discover -s processor/tests -v
 ```
 
-## Run the Python processor
+## Local image processor
 
-Prerequisite: Python 3.12.
-
-From the project root, create and activate a virtual environment, then install Pillow:
+The existing Pillow processor remains available locally while the AWS processing phase is being developed. Install its dependency in the project virtual environment:
 
 ```bash
 python -m venv .venv
@@ -58,33 +119,23 @@ Process a local JPG or PNG:
 python processor/process_image.py path/to/example.jpg
 ```
 
-Alternatively, run the command from inside `processor/`:
+The processor writes thumbnail, medium, and optimized WebP outputs to `processor/output/`. It preserves aspect ratio, does not upscale, and composites PNG transparency onto white for JPEG outputs.
 
-```bash
-cd processor
-python process_image.py input/example.jpg
-```
+## Planned next architecture phase
 
-The processor writes these files to `processor/output/`:
+Phase 4 is planned, not deployed:
 
 ```text
-example_thumbnail.jpg    # maximum 200x200
-example_medium.jpg       # maximum 800x800
-example_optimized.webp  # optimized WebP version
+S3 incoming event
+        |
+        v
+SQS
+        |
+        v
+Processing Lambda using Pillow
+        |
+        v
+Validated/transformed output
 ```
 
-The thumbnail and medium images are not upscaled and all generated images preserve the source aspect ratio. PNG transparency is composited onto white for the JPEG outputs.
-
-## Run Python tests
-
-From the project root:
-
-```bash
-python -m unittest discover -s processor/tests -v
-```
-
-The tests create temporary JPG and PNG images, verify the generated formats and dimensions, check aspect ratio preservation, and confirm that unsupported file types produce a readable error. They do not leave files in `processor/output/`.
-
-## Scope
-
-This phase does not include AWS infrastructure, Terraform, authentication, databases, queues, uploads, or deployment configuration.
+That phase should include SQS retries and a dead-letter queue, least-privilege IAM, and actual image signature/content validation rather than relying on MIME metadata alone. The project is not complete until that processing path is implemented, secured, and deployed.

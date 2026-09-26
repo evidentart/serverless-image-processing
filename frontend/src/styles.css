@@ -92,10 +92,14 @@ h1 {
   width: 1px;
 }
 
-.validation-message {
+.status-message {
   color: #b42318;
   font-size: 0.9rem;
   margin: 12px 0 0;
+}
+
+.status-success {
+  color: #027a48;
 }
 
 .image-details {
@@ -185,22 +189,25 @@ dd {
 }
 
 .process-button {
-  background: #d0d5dd;
+  background: #4361ee;
   border: 0;
   border-radius: 12px;
-  color: #667085;
-  cursor: not-allowed;
+  color: #ffffff;
+  cursor: pointer;
   font-weight: 750;
   margin-top: 24px;
   min-height: 52px;
   width: 100%;
 }
 
-.coming-soon {
-  color: #98a2b3;
-  font-size: 0.84rem;
-  margin: 12px 0 0;
-  text-align: center;
+.process-button:hover:not(:disabled) {
+  background: #364fc7;
+}
+
+.process-button:disabled {
+  background: #d0d5dd;
+  color: #667085;
+  cursor: not-allowed;
 }
 
 @media (max-width: 560px) {
