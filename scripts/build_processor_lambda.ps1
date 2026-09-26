@@ -20,6 +20,7 @@ python -m pip install `
     --abi cp312 `
     --only-binary=:all: `
     --no-deps `
+    --no-compile `
     --upgrade
 
 Copy-Item (Join-Path $projectRoot "lambda\processor_handler.py") $buildRoot

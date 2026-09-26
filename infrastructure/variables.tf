@@ -35,3 +35,17 @@ variable "budget_alert_email" {
   description = "Email address that receives account-wide budget threshold alerts."
   type        = string
 }
+
+variable "frontend_allowed_origins" {
+  description = "Browser origins allowed to call the upload and status API and upload directly to S3."
+  type        = list(string)
+  default = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+  ]
+
+  validation {
+    condition     = length(var.frontend_allowed_origins) > 0 && !contains(var.frontend_allowed_origins, "*")
+    error_message = "frontend_allowed_origins must contain at least one explicit origin and must not contain '*'."
+  }
+}

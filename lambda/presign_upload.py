@@ -117,8 +117,12 @@ def _validate_request(payload: dict[str, Any]) -> tuple[str, str, int]:
     return filename, content_type, size_bytes
 
 
-def _generate_object_key(content_type: str) -> str:
-    return f"{UPLOAD_PREFIX}{uuid.uuid4().hex}.{KEY_EXTENSIONS[content_type]}"
+def _generate_upload_id() -> str:
+    return uuid.uuid4().hex
+
+
+def _generate_object_key(upload_id: str, content_type: str) -> str:
+    return f"{UPLOAD_PREFIX}{upload_id}.{KEY_EXTENSIONS[content_type]}"
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -135,7 +139,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         LOGGER.error("IMAGE_BUCKET is not configured")
         return _response(500, {"error": "Unable to create upload request."})
 
-    object_key = _generate_object_key(content_type)
+    upload_id = _generate_upload_id()
+    object_key = _generate_object_key(upload_id, content_type)
     fields = {
         "Content-Type": content_type,
         "x-amz-server-side-encryption": "AES256",
@@ -163,6 +168,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         {
             "upload_url": presigned_post["url"],
             "object_key": object_key,
+            "upload_id": upload_id,
             "expires_in": PRESIGN_EXPIRES_SECONDS,
             "fields": presigned_post["fields"],
         },

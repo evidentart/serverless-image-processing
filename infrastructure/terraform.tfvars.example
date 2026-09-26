@@ -2,3 +2,7 @@ aws_region   = "us-east-1"
 environment  = "dev"
 project_name = "serverless-image-processing"
 budget_alert_email = "you@example.com"
+frontend_allowed_origins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+]

@@ -2,6 +2,11 @@ data "archive_file" "processor" {
   type        = "zip"
   source_dir  = "${path.module}/../.phase4-build/processor-package"
   output_path = "${path.module}/.terraform/processor.zip"
+
+  excludes = [
+    "**/__pycache__/**",
+    "**/*.pyc",
+  ]
 }
 
 resource "aws_sqs_queue" "processing_dlq" {

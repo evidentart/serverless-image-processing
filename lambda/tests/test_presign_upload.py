@@ -99,6 +99,8 @@ class PresignUploadTests(unittest.TestCase):
         self.assertEqual(body["expires_in"], 300)
         self.assertTrue(body["object_key"].startswith("incoming/"))
         self.assertTrue(body["object_key"].endswith(".jpg"))
+        self.assertRegex(body["upload_id"], r"^[0-9a-f]{32}$")
+        self.assertEqual(body["object_key"], f"incoming/{body['upload_id']}.jpg")
         self.assertNotIn("photo.jpeg", body["object_key"])
         self.assertEqual(body["fields"]["Content-Type"], "image/jpeg")
         self.assertEqual(body["fields"]["x-amz-server-side-encryption"], "AES256")
@@ -107,7 +109,10 @@ class PresignUploadTests(unittest.TestCase):
         response = presign_upload.lambda_handler(request("photo.PNG", "image/png", 2048), None)
 
         self.assertEqual(response["statusCode"], 200)
-        self.assertTrue(response_body(response)["object_key"].endswith(".png"))
+        body = response_body(response)
+        self.assertTrue(body["object_key"].endswith(".png"))
+        self.assertRegex(body["upload_id"], r"^[0-9a-f]{32}$")
+        self.assertEqual(body["object_key"], f"incoming/{body['upload_id']}.png")
 
     def test_invalid_mime_type_is_rejected(self) -> None:
         response = presign_upload.lambda_handler(request("photo.gif", "image/gif", 1024), None)
