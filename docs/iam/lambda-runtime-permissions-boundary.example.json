@@ -1,0 +1,58 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ProjectIncomingReadCeiling",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::${PROJECT_BUCKET_NAME}/incoming/*"
+    },
+    {
+      "Sid": "ProjectIncomingWriteCeiling",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::${PROJECT_BUCKET_NAME}/incoming/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-server-side-encryption": "AES256"
+        }
+      }
+    },
+    {
+      "Sid": "ProjectProcessedObjectCeiling",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::${PROJECT_BUCKET_NAME}/processed/*"
+    },
+    {
+      "Sid": "ProjectProcessingQueueCeiling",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes",
+        "sqs:ReceiveMessage"
+      ],
+      "Resource": "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${PROCESSING_QUEUE_NAME}"
+    },
+    {
+      "Sid": "ProjectLambdaLogCeiling",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${PRESIGN_LOG_GROUP_NAME}:*",
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${STATUS_LOG_GROUP_NAME}:*",
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${PROCESSOR_LOG_GROUP_NAME}:*"
+      ]
+    }
+  ]
+}

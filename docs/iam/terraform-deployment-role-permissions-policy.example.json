@@ -1,0 +1,247 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadCallerIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageImageBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:DeleteBucketPolicy",
+        "s3:GetAccelerateConfiguration",
+        "s3:GetBucketAcl",
+        "s3:GetBucketCORS",
+        "s3:GetBucketLocation",
+        "s3:GetBucketLogging",
+        "s3:GetBucketNotification",
+        "s3:GetBucketObjectLockConfiguration",
+        "s3:GetBucketOwnershipControls",
+        "s3:GetBucketPolicy",
+        "s3:GetBucketPublicAccessBlock",
+        "s3:GetBucketRequestPayment",
+        "s3:GetBucketTagging",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketWebsite",
+        "s3:GetEncryptionConfiguration",
+        "s3:GetLifecycleConfiguration",
+        "s3:GetReplicationConfiguration",
+        "s3:ListBucket",
+        "s3:PutBucketCORS",
+        "s3:PutBucketNotification",
+        "s3:PutBucketOwnershipControls",
+        "s3:PutBucketPolicy",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketTagging",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration"
+      ],
+      "Resource": "arn:aws:s3:::${PROJECT_BUCKET_NAME}"
+    },
+    {
+      "Sid": "ManageProcessingQueues",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:CreateQueue",
+        "sqs:DeleteQueue",
+        "sqs:GetQueueAttributes",
+        "sqs:GetQueueUrl",
+        "sqs:ListQueueTags",
+        "sqs:SetQueueAttributes",
+        "sqs:TagQueue",
+        "sqs:UntagQueue"
+      ],
+      "Resource": [
+        "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${PROCESSING_QUEUE_NAME}",
+        "arn:aws:sqs:${AWS_REGION}:${AWS_ACCOUNT_ID}:${PROCESSING_DLQ_NAME}"
+      ]
+    },
+    {
+      "Sid": "ManageLambdaFunctions",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateFunction",
+        "lambda:DeleteFunction",
+        "lambda:GetFunction",
+        "lambda:GetFunctionCodeSigningConfig",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListTags",
+        "lambda:ListVersionsByFunction",
+        "lambda:TagResource",
+        "lambda:UntagResource",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration"
+      ],
+      "Resource": [
+        "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${PRESIGN_FUNCTION_NAME}",
+        "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${STATUS_FUNCTION_NAME}",
+        "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${PROCESSOR_FUNCTION_NAME}"
+      ]
+    },
+    {
+      "Sid": "ManageLambdaPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:AddPermission",
+        "lambda:GetPolicy",
+        "lambda:RemovePermission"
+      ],
+      "Resource": [
+        "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${PRESIGN_FUNCTION_NAME}",
+        "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${STATUS_FUNCTION_NAME}"
+      ]
+    },
+    {
+      "Sid": "CreateProcessorEventSourceMapping",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateEventSourceMapping"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnEquals": {
+          "lambda:FunctionArn": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${PROCESSOR_FUNCTION_NAME}"
+        }
+      }
+    },
+    {
+      "Sid": "ManageCurrentProcessorEventSourceMapping",
+      "Effect": "Allow",
+      "Action": [
+        "lambda:DeleteEventSourceMapping",
+        "lambda:GetEventSourceMapping",
+        "lambda:ListTags",
+        "lambda:TagResource",
+        "lambda:UntagResource",
+        "lambda:UpdateEventSourceMapping"
+      ],
+      "Resource": "arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:event-source-mapping:${PROCESSOR_EVENT_SOURCE_MAPPING_UUID}"
+    },
+    {
+      "Sid": "ManageProjectLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:DeleteRetentionPolicy",
+        "logs:PutRetentionPolicy"
+      ],
+      "Resource": [
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${PRESIGN_LOG_GROUP_NAME}:*",
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${STATUS_LOG_GROUP_NAME}:*",
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${PROCESSOR_LOG_GROUP_NAME}:*"
+      ]
+    },
+    {
+      "Sid": "ManageProjectLogGroupTags",
+      "Effect": "Allow",
+      "Action": [
+        "logs:ListTagsForResource",
+        "logs:TagResource",
+        "logs:UntagResource"
+      ],
+      "Resource": [
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${PRESIGN_LOG_GROUP_NAME}",
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${STATUS_LOG_GROUP_NAME}",
+        "arn:aws:logs:${AWS_REGION}:${AWS_ACCOUNT_ID}:log-group:${PROCESSOR_LOG_GROUP_NAME}"
+      ]
+    },
+    {
+      "Sid": "DiscoverProjectLogGroups",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CreateProjectHttpApi",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:POST"
+      ],
+      "Resource": "arn:aws:apigateway:${AWS_REGION}::/apis",
+      "Condition": {
+        "StringEquals": {
+          "apigateway:Request/ApiName": "${PROJECT_API_NAME}"
+        }
+      }
+    },
+    {
+      "Sid": "ManageProjectHttpApi",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:DELETE",
+        "apigateway:GET",
+        "apigateway:PATCH",
+        "apigateway:POST",
+        "apigateway:PUT"
+      ],
+      "Resource": [
+        "arn:aws:apigateway:${AWS_REGION}::/apis/${PROJECT_API_ID}",
+        "arn:aws:apigateway:${AWS_REGION}::/apis/${PROJECT_API_ID}/*"
+      ]
+    },
+    {
+      "Sid": "ReadProjectBudget",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:ListTagsForResource",
+        "budgets:ViewBudget"
+      ],
+      "Resource": "arn:aws:budgets::${AWS_ACCOUNT_ID}:budget/${PROJECT_BUDGET_NAME}"
+    },
+    {
+      "Sid": "ReadBillingVisibilityForBudgetRefresh",
+      "Effect": "Allow",
+      "Action": [
+        "aws-portal:ViewBilling"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageExistingLambdaRoleInlinePolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteRolePolicy",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies",
+        "iam:ListRoleTags",
+        "iam:PutRolePolicy",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PRESIGN_ROLE_NAME}",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${STATUS_ROLE_NAME}",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROCESSOR_ROLE_NAME}"
+      ]
+    },
+    {
+      "Sid": "PassOnlyProjectLambdaRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PRESIGN_ROLE_NAME}",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${STATUS_ROLE_NAME}",
+        "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROCESSOR_ROLE_NAME}"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "lambda.amazonaws.com"
+        }
+      }
+    }
+  ]
+}

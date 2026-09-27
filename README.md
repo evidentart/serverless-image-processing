@@ -56,6 +56,36 @@ processed/<uuid>/optimized.webp
 - Original filenames are not used as local processing paths or processed S3 keys.
 - The frontend does not display or log signed AWS fields.
 
+### Terraform deployment security
+
+Phase 6 separates routine Terraform work from exceptional IAM bootstrap and recovery work:
+
+- The routine Terraform deployment role, `serverless-image-terraform-deploy`, is used for normal Terraform operations. It is intentionally scoped and cannot manage itself, create or delete Lambda execution roles, change execution-role trust policies, administer the permissions boundary, mutate the AWS Budget, or perform other privileged bootstrap/recovery operations.
+- The bootstrap/recovery administrator is `dev-user1`. It temporarily retains `AdministratorAccess` for exceptional bootstrap and recovery tasks. Removing or replacing that access is intentionally deferred until a safe recovery model is established.
+- The three Lambda runtime roles (`presign-upload`, `status-upload`, and `processor`) are assumed by Lambda and constrained by the bootstrap-owned `serverless-image-processing-lambda-boundary`. The boundary is a maximum permissions ceiling; it does not grant permissions by itself. Application Terraform references the boundary on the roles but does not manage the boundary policy itself.
+
+No long-lived IAM access keys are used. The local Terraform credential flow is:
+
+```text
+AWS browser login
+      |
+      v
+serverless-image-dev
+      login_session
+      |
+      v
+serverless-image-terraform-source
+      credential_process
+      |
+      v
+serverless-image-terraform
+      assumes serverless-image-terraform-deploy
+```
+
+The intermediate `credential_process` profile is a local compatibility shim for Terraform and the AWS SDK credential-loading path. It does not contain credentials or generated temporary credential output.
+
+Reference-only policy examples are available in [`docs/iam/`](docs/iam/): [deployment-role trust policy](docs/iam/terraform-deployment-role-trust-policy.example.json), [deployment-role permissions policy](docs/iam/terraform-deployment-role-permissions-policy.example.json), and [Lambda runtime permissions boundary](docs/iam/lambda-runtime-permissions-boundary.example.json). These files document the reviewed design; they are not automatically applied by Terraform.
+
 ## Image validation
 
 Phase 4 validates actual image content with Pillow instead of trusting MIME metadata or file extensions. It includes:
@@ -105,7 +135,7 @@ Verified Phase 4 results:
 - 30 total Python tests pass
 - Terraform fmt check passes
 - Terraform validate passes
-- Terraform reports no infrastructure drift after deployment
+- A restricted-role Terraform plan was successfully verified against the deployed development environment and reported no changes; this is point-in-time verification, not a permanent guarantee of no drift.
 - The live processor Lambda is Active
 - The live SQS event source mapping is Enabled
 - A real JPEG was uploaded to `incoming/`
@@ -114,12 +144,14 @@ Verified Phase 4 results:
 
 ## Current limitations and future work
 
-- The upload API remains unauthenticated for the current development/portfolio phase.
+- The upload and status endpoints remain unauthenticated for the current development/portfolio phase; the status endpoint is not real user authentication.
 - API throttling reduces abuse risk but is not a hard security boundary or spending cap.
-- The frontend does not yet display processed results or processing status.
+- The frontend displays processing status and completed processed-image results.
 - CORS currently allows only the local Vite origins.
 - Terraform state is still local.
-- Direct `AdministratorAccess` remains a temporary bootstrap compromise, not the desired long-term deployment model.
+- Normal Terraform work uses `serverless-image-terraform-deploy`.
+- `dev-user1` still temporarily retains `AdministratorAccess` as the bootstrap/recovery path. Further reduction or removal of that access is deferred until a safe recovery model is established.
+- This remains a development/portfolio architecture and is not a claim of production readiness.
 - Production frontend hosting and CI/CD are not implemented yet.
 - The project is not complete until these operational limitations are addressed for a production deployment.
 

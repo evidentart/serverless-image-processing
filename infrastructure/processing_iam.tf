@@ -12,8 +12,9 @@ data "aws_iam_policy_document" "processor_assume_role" {
 }
 
 resource "aws_iam_role" "processor" {
-  name               = "${var.project_name}-${var.environment}-processor"
-  assume_role_policy = data.aws_iam_policy_document.processor_assume_role.json
+  name                 = "${var.project_name}-${var.environment}-processor"
+  assume_role_policy   = data.aws_iam_policy_document.processor_assume_role.json
+  permissions_boundary = local.lambda_runtime_boundary_arn
 }
 
 data "aws_iam_policy_document" "processor" {

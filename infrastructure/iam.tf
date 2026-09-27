@@ -12,8 +12,9 @@ data "aws_iam_policy_document" "presign_upload_assume_role" {
 }
 
 resource "aws_iam_role" "presign_upload" {
-  name               = "${var.project_name}-${var.environment}-presign-upload"
-  assume_role_policy = data.aws_iam_policy_document.presign_upload_assume_role.json
+  name                 = "${var.project_name}-${var.environment}-presign-upload"
+  assume_role_policy   = data.aws_iam_policy_document.presign_upload_assume_role.json
+  permissions_boundary = local.lambda_runtime_boundary_arn
 }
 
 data "aws_iam_policy_document" "presign_upload" {
@@ -63,8 +64,9 @@ data "aws_iam_policy_document" "status_upload_assume_role" {
 }
 
 resource "aws_iam_role" "status_upload" {
-  name               = "${var.project_name}-${var.environment}-status-upload"
-  assume_role_policy = data.aws_iam_policy_document.status_upload_assume_role.json
+  name                 = "${var.project_name}-${var.environment}-status-upload"
+  assume_role_policy   = data.aws_iam_policy_document.status_upload_assume_role.json
+  permissions_boundary = local.lambda_runtime_boundary_arn
 }
 
 data "aws_iam_policy_document" "status_upload" {
