@@ -1,6 +1,6 @@
 # Serverless Image Processing Platform
 
-A portfolio project demonstrating a serverless image-upload and processing pipeline. Phase 4 is deployed and verified end to end.
+A portfolio project demonstrating a serverless image-upload and processing pipeline. Phase 5 application functionality is complete, and Phase 6 IAM hardening is in place.
 
 ## Current architecture
 
@@ -33,7 +33,7 @@ Image bytes upload directly from the browser to the private S3 bucket; they do n
 
 ## Upload and processing outputs
 
-Phase 3 accepts JPEG/JPG and PNG uploads up to 25 MiB. S3 object keys use server-generated UUIDs and never use original filenames.
+The application accepts JPEG/JPG and PNG uploads up to 25 MiB. S3 object keys use server-generated UUIDs and never use original filenames.
 
 A successfully processed image produces deterministic outputs such as:
 
@@ -88,7 +88,7 @@ Reference-only policy examples are available in [`docs/iam/`](docs/iam/): [deplo
 
 ## Image validation
 
-Phase 4 validates actual image content with Pillow instead of trusting MIME metadata or file extensions. It includes:
+The application validates actual image content with Pillow instead of trusting MIME metadata or file extensions. It includes:
 
 - Actual JPEG and PNG content validation
 - `Image.verify()` followed by reopening the image for processing
@@ -127,14 +127,14 @@ Terraform archives the generated, Git-ignored `.phase4-build/processor-package` 
 
 ## Testing and verification
 
-Verified Phase 4 results:
+Verified application and infrastructure results:
 
-- 10 presign Lambda tests pass
-- 16 processor-handler Lambda tests pass
+- 41 Lambda tests pass across the presign, status, and processor-handler handlers
 - 4 processor tests pass
-- 30 total Python tests pass
+- 45 total Python tests pass
 - Terraform fmt check passes
 - Terraform validate passes
+- GitHub Actions CI runs the Python tests, frontend build, and Terraform format/init/validate checks without AWS credentials.
 - A restricted-role Terraform plan was successfully verified against the deployed development environment and reported no changes; this is point-in-time verification, not a permanent guarantee of no drift.
 - The live processor Lambda is Active
 - The live SQS event source mapping is Enabled
@@ -152,7 +152,7 @@ Verified Phase 4 results:
 - Normal Terraform work uses `serverless-image-terraform-deploy`.
 - `dev-user1` still temporarily retains `AdministratorAccess` as the bootstrap/recovery path. Further reduction or removal of that access is deferred until a safe recovery model is established.
 - This remains a development/portfolio architecture and is not a claim of production readiness.
-- Production frontend hosting and CI/CD are not implemented yet.
+- Production frontend hosting and automated cloud deployment/CD are not implemented yet.
 - The project is not complete until these operational limitations are addressed for a production deployment.
 
 ## Cost and architectural decisions
