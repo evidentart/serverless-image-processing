@@ -1,41 +1,93 @@
 # Serverless Image Processing Platform
 
-A portfolio project demonstrating a serverless image-upload and processing pipeline. Phase 5 application functionality is complete, and Phase 6 IAM hardening is in place.
+A serverless image-processing application built with AWS Lambda, S3, SQS, API Gateway, React, Pillow, and Terraform.
 
-## Current architecture
+The application accepts JPEG and PNG uploads, stores them privately in S3, processes them asynchronously, and returns multiple optimized image variants to the frontend.
+
+## Demo
+
+![Serverless image processing demo](docs/assets/demo.gif)
+
+## Architecture
+
+### Upload and processing flow
 
 ```text
-React/Vite frontend
-        |
-        v
-API Gateway HTTP API
-        |
-        v
-Presign Lambda
-        |
-        v
-Browser direct upload to S3 incoming/
-        |
-        v
-S3 ObjectCreated notification
-        |
-        v
-Standard SQS processing queue
-        |
-        v
-Processing Lambda with Pillow
-        |
-        v
-S3 processed/<uuid>/
++----------------------+
+|    React / Vite      |
+|      Frontend        |
++----------+-----------+
+           |
+           | Request upload authorization
+           v
++----------------------+
+| API Gateway HTTP API |
++----------+-----------+
+           |
+           v
++----------------------+
+|   Presign Lambda     |
++----------+-----------+
+           |
+           | Presigned POST
+           v
++----------------------+
+|   Private S3 Bucket  |
+|      incoming/       |
++----------+-----------+
+           |
+           | ObjectCreated event
+           v
++----------------------+
+| Standard SQS Queue   |
++----------+-----------+
+           |
+           v
++----------------------+
+| Processing Lambda    |
+|      + Pillow        |
++----------+-----------+
+           |
+           v
++----------------------+
+|   Private S3 Bucket  |
+|     processed/       |
++----------------------+
 ```
 
-Image bytes upload directly from the browser to the private S3 bucket; they do not pass through Lambda or API Gateway. The presign Lambda creates short-lived upload policies, while the processing Lambda consumes validated event messages asynchronously.
+Image bytes upload directly from the browser to S3 rather than passing through API Gateway or Lambda.
 
-## Upload and processing outputs
+Processing is asynchronous: S3 emits an object-created event, SQS buffers the work, and the processor Lambda handles image transformation independently of the upload request.
 
-The application accepts JPEG/JPG and PNG uploads up to 25 MiB. S3 object keys use server-generated UUIDs and never use original filenames.
+### Status and result flow
 
-A successfully processed image produces deterministic outputs such as:
+```text
+React frontend
+      |
+      | Poll processing status
+      v
+API Gateway
+      |
+      v
+Status Lambda
+      |
+      v
+Processed S3 objects
+      |
+      v
+Short-lived presigned GET URLs
+      |
+      v
+Frontend displays processed images
+```
+
+## Processing outputs
+
+Uploads are limited to JPEG/JPG and PNG files up to 25 MiB.
+
+Each upload receives a server-generated UUID. Original filenames are not used as processing keys or local processing paths.
+
+A successfully processed image produces:
 
 ```text
 processed/<uuid>/thumbnail.jpg
@@ -43,124 +95,239 @@ processed/<uuid>/medium.jpg
 processed/<uuid>/optimized.webp
 ```
 
-## Security controls
+The frontend polls for processing status and displays the generated results when they become available.
 
-- The S3 bucket is private with S3 Block Public Access and `BucketOwnerEnforced` ownership.
-- SSE-S3 AES256 encryption and a TLS-only bucket policy are enabled.
-- Presigned POST policies expire after five minutes and enforce size, `Content-Type`, generated key, and AES256 conditions.
-- The presign Lambda has `s3:PutObject` only to `incoming/*`.
-- The processing Lambda reads only from `incoming/*` and writes only to `processed/*`.
-- The processing Lambda does not delete source objects, list the bucket, or write back to `incoming/*`.
-- The processing Lambda consumes only the processing SQS queue.
-- The processing Lambda has no VPC, NAT Gateway, reserved concurrency, or provisioned concurrency.
-- Original filenames are not used as local processing paths or processed S3 keys.
-- The frontend does not display or log signed AWS fields.
+## Engineering highlights
 
-### Terraform deployment security
+- Direct browser-to-S3 uploads using short-lived presigned POST policies
+- Private S3 storage with Block Public Access
+- Asynchronous image processing through SQS
+- Retry handling with a dead-letter queue
+- Deterministic output paths for safe repeated processing
+- Pillow-based image-content validation
+- JPEG and PNG verification with decompression-bomb protections
+- EXIF orientation handling
+- Server-generated UUID object keys
+- Least-privilege Lambda execution roles
+- Lambda execution-role permissions boundary
+- Dedicated restricted Terraform deployment role
+- Infrastructure managed with Terraform
+- Automated GitHub Actions validation without AWS credentials
 
-Phase 6 separates routine Terraform work from exceptional IAM bootstrap and recovery work:
+## Security
 
-- The routine Terraform deployment role, `serverless-image-terraform-deploy`, is used for normal Terraform operations. It is intentionally scoped and cannot manage itself, create or delete Lambda execution roles, change execution-role trust policies, administer the permissions boundary, mutate the AWS Budget, or perform other privileged bootstrap/recovery operations.
-- The bootstrap/recovery administrator is `dev-user1`. It temporarily retains `AdministratorAccess` for exceptional bootstrap and recovery tasks. Removing or replacing that access is intentionally deferred until a safe recovery model is established.
-- The three Lambda runtime roles (`presign-upload`, `status-upload`, and `processor`) are assumed by Lambda and constrained by the bootstrap-owned `serverless-image-processing-lambda-boundary`. The boundary is a maximum permissions ceiling; it does not grant permissions by itself. Application Terraform references the boundary on the roles but does not manage the boundary policy itself.
+The S3 bucket is private and configured with:
 
-No long-lived IAM access keys are used. The local Terraform credential flow is:
+- S3 Block Public Access
+- `BucketOwnerEnforced` ownership
+- SSE-S3 AES256 encryption
+- TLS-only bucket access
+- lifecycle expiration for development image objects
+
+Presigned upload policies:
+
+- expire after five minutes
+- restrict upload size
+- restrict `Content-Type`
+- enforce the generated object key
+- require AES256 server-side encryption
+
+IAM permissions are scoped by responsibility:
+
+- The presign Lambda can write only to `incoming/*`
+- The processor Lambda can read from `incoming/*`
+- The processor Lambda can write only to `processed/*`
+- The processor Lambda consumes only the processing SQS queue
+- The status Lambda accesses the processed objects required to report status and generate result URLs
+
+The Lambda execution roles are additionally constrained by a customer-managed permissions boundary.
+
+Routine Terraform operations use the dedicated:
 
 ```text
-AWS browser login
-      |
-      v
-serverless-image-dev
-      login_session
-      |
-      v
-serverless-image-terraform-source
-      credential_process
-      |
-      v
-serverless-image-terraform
-      assumes serverless-image-terraform-deploy
+serverless-image-terraform-deploy
 ```
 
-The intermediate `credential_process` profile is a local compatibility shim for Terraform and the AWS SDK credential-loading path. It does not contain credentials or generated temporary credential output.
+deployment role.
 
-Reference-only policy examples are available in [`docs/iam/`](docs/iam/): [deployment-role trust policy](docs/iam/terraform-deployment-role-trust-policy.example.json), [deployment-role permissions policy](docs/iam/terraform-deployment-role-permissions-policy.example.json), and [Lambda runtime permissions boundary](docs/iam/lambda-runtime-permissions-boundary.example.json). These files document the reviewed design; they are not automatically applied by Terraform.
+Bootstrap and recovery privileges are kept separate from normal Terraform deployment permissions.
+
+No long-lived IAM access keys are used.
+
+Reference IAM policy examples are available in [`docs/iam/`](docs/iam/):
+
+- [Terraform deployment role permissions](docs/iam/terraform-deployment-role-permissions-policy.example.json)
+- [Terraform deployment role trust policy](docs/iam/terraform-deployment-role-trust-policy.example.json)
+- [Lambda runtime permissions boundary](docs/iam/lambda-runtime-permissions-boundary.example.json)
+
+These files document the reviewed IAM design and are not automatically applied by Terraform.
 
 ## Image validation
 
-The application validates actual image content with Pillow instead of trusting MIME metadata or file extensions. It includes:
+Uploaded image content is validated with Pillow instead of trusting file extensions or MIME metadata alone.
 
-- Actual JPEG and PNG content validation
+Validation includes:
+
+- JPEG and PNG content verification
 - `Image.verify()` followed by reopening the image for processing
-- Truncated-image rejection
+- truncated-image rejection
 - Pillow decompression-bomb protection
-- Maximum dimension of 10,000 pixels
-- Maximum total pixel count of 25,000,000
+- maximum dimension of 10,000 pixels
+- maximum total pixel count of 25,000,000
 - EXIF orientation handling
-- Generated safe temporary paths under `/tmp`
-- No use of original user filenames as processing paths or processed keys
+- generated temporary paths under `/tmp`
+- no use of original filenames as temporary processing paths
 
-## SQS and failure handling
+## Queue and failure handling
 
-- Standard SQS processing queue with batch size 1
-- Maximum event-source concurrency of 2
+The processing pipeline uses:
+
+- SQS standard queue
+- batch size of 1
+- maximum event-source concurrency of 2
 - 360-second visibility timeout
-- Four-day main queue retention
-- Dead-letter queue after three receives
+- four-day main queue retention
+- dead-letter queue after three receives
 - 14-day DLQ retention
 - SQS-managed encryption
-- Deterministic output paths make duplicate deliveries safe
-- Malformed or transient failures retry through SQS and eventually move to the DLQ
-- S3 `s3:TestEvent` messages are explicitly handled as harmless successful no-ops
 
-The S3 notification is filtered to `incoming/`, so objects written under `processed/` cannot recursively trigger processing. The existing development lifecycle rule applies to the entire bucket: both `incoming/*` and `processed/*` expire after 30 days. This is intentional for the temporary portfolio/dev environment.
+Malformed or transient processing failures retry through SQS and eventually move to the DLQ.
 
-## Packaging
+Deterministic output paths make duplicate message delivery safe because repeated processing targets the same UUID-based result locations.
 
-Before any Terraform plan or apply involving processor Lambda code, run:
+S3 notifications are filtered to `incoming/`, so generated objects under `processed/` cannot recursively trigger the processor.
+
+S3 `s3:TestEvent` messages are handled as harmless successful no-ops.
+
+## Infrastructure
+
+The AWS infrastructure is managed with Terraform.
+
+The configuration includes:
+
+- S3 storage and lifecycle rules
+- API Gateway HTTP API
+- Lambda functions
+- SQS processing queue and DLQ
+- S3 event notifications
+- Lambda event-source mapping
+- IAM roles and scoped inline policies
+- CloudWatch log groups
+- AWS Budget configuration
+
+Terraform provider versions are constrained and recorded in the committed dependency lock file.
+
+Routine Terraform operations use the restricted deployment role rather than direct administrator access.
+
+## Processor packaging
+
+Before a Terraform plan or apply involving processor Lambda code, build the processor package:
 
 ```powershell
 .\scripts\build_processor_lambda.ps1
 ```
 
-Terraform archives the generated, Git-ignored `.phase4-build/processor-package` directory. A clean checkout must run this reproducible build step first. The script packages Linux/x86_64-compatible Pillow wheels for the Python 3.12 Lambda runtime and does not copy Pillow from the Windows virtual environment.
+The script creates:
 
-## Testing and verification
+```text
+.phase4-build/processor-package
+```
 
-Verified application and infrastructure results:
+This generated directory is intentionally ignored by Git.
 
-- 41 Lambda tests pass across the presign, status, and processor-handler handlers
-- 4 processor tests pass
-- 45 total Python tests pass
-- Terraform fmt check passes
-- Terraform validate passes
-- GitHub Actions CI runs the Python tests, frontend build, and Terraform format/init/validate checks without AWS credentials.
-- A restricted-role Terraform plan was successfully verified against the deployed development environment and reported no changes; this is point-in-time verification, not a permanent guarantee of no drift.
-- The live processor Lambda is Active
-- The live SQS event source mapping is Enabled
-- A real JPEG was uploaded to `incoming/`
-- The live pipeline produced `thumbnail.jpg`, `medium.jpg`, and `optimized.webp`
-- The main queue and DLQ were clean after testing
+The packaging process installs Linux/x86_64-compatible Pillow dependencies for the Python 3.12 Lambda runtime instead of copying packages from the local Windows Python environment.
 
-## Current limitations and future work
+## Testing and CI
 
-- The upload and status endpoints remain unauthenticated for the current development/portfolio phase; the status endpoint is not real user authentication.
-- API throttling reduces abuse risk but is not a hard security boundary or spending cap.
-- The frontend displays processing status and completed processed-image results.
-- CORS currently allows only the local Vite origins.
-- Terraform state is still local.
-- Normal Terraform work uses `serverless-image-terraform-deploy`.
-- `dev-user1` still temporarily retains `AdministratorAccess` as the bootstrap/recovery path. Further reduction or removal of that access is deferred until a safe recovery model is established.
-- This remains a development/portfolio architecture and is not a claim of production readiness.
-- Production frontend hosting and automated cloud deployment/CD are not implemented yet.
-- The project is not complete until these operational limitations are addressed for a production deployment.
+Current automated coverage:
 
-## Cost and architectural decisions
+- 41 Lambda tests
+- 4 processor tests
+- 45 Python tests total
+- frontend production build validation
+- Terraform formatting validation
+- Terraform configuration validation
 
-- Serverless, pay-per-use services are used throughout.
-- HTTP API was selected instead of REST API.
-- Direct browser-to-S3 upload avoids sending image bytes through Lambda.
-- SQS provides decoupling, retries, and DLQ handling without an always-on worker.
-- No DynamoDB, EventBridge, VPC, NAT Gateway, WAF, Cognito, ECR, or customer-managed KMS key is used.
-- S3 versioning is intentionally disabled for disposable development image objects.
-- AWS Budget alerts provide visibility but are not a hard spending cap.
+GitHub Actions runs three CI jobs:
+
+```text
+Python tests
+Frontend build
+Terraform validation
+```
+
+The Terraform CI job runs:
+
+```text
+terraform fmt -check -diff
+terraform init -backend=false -lockfile=readonly
+terraform validate
+```
+
+CI does not use AWS credentials and does not run:
+
+```text
+terraform plan
+terraform apply
+terraform destroy
+```
+
+The deployed development environment has also been verified end to end with a real JPEG upload producing:
+
+```text
+thumbnail.jpg
+medium.jpg
+optimized.webp
+```
+
+A restricted-role Terraform plan was also verified against the deployed environment and reported no infrastructure changes at the time of testing.
+
+## Design decisions
+
+### Direct browser-to-S3 upload
+
+Image bytes bypass API Gateway and Lambda.
+
+The API is responsible for generating constrained upload authorization and serving status/result requests, while S3 handles the image transfer itself.
+
+### Asynchronous processing with SQS
+
+SQS separates upload completion from image processing and provides retry and dead-letter behavior between S3 and the processing Lambda.
+
+This keeps image processing independent of the frontend request lifecycle.
+
+### Deterministic output paths
+
+Processed objects use UUID-based deterministic locations.
+
+This makes repeated delivery of the same queue message safe because the processor writes to the same known output paths.
+
+### Scoped infrastructure
+
+The architecture uses only the services required for the current workload.
+
+It does not currently require:
+
+- DynamoDB
+- EventBridge
+- Step Functions
+- VPC networking
+- NAT Gateway
+- Cognito
+- ECR
+- customer-managed KMS keys
+
+## Current limitations
+
+This repository represents a development and portfolio deployment rather than a production service.
+
+Current limitations include:
+
+- upload and status endpoints are unauthenticated
+- CORS is configured for local Vite development origins
+- Terraform state is stored locally
+- frontend hosting is not automated
+- CI validates the repository but does not deploy infrastructure
+- privileged IAM bootstrap/recovery access remains separate from the restricted routine Terraform role
+
+A production deployment would require additional work around authentication, hosted frontend delivery, Terraform state management, deployment automation, and operational controls.
